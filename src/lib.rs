@@ -35,13 +35,13 @@ pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
         match trait_ {
             Trait::Unary(name) => impl_unary(function, name),
             Trait::Binary(name) => impl_binary(function, name),
-            Trait::Assign(name) => todo!(),
+            Trait::Assign(name) => impl_assign(function, name),
         }
     } else {
         match trait_ {
             Trait::Unary(name) => impl_unary_autoref(function, name),
             Trait::Binary(name) => impl_binary_autoref(function, name),
-            Trait::Assign(name) => todo!(),
+            Trait::Assign(name) => impl_assign_autoref(function, name),
         }
     };
     output.into()
@@ -67,6 +67,16 @@ fn to_trait(function: &str) -> Trait {
         "bitxor" => Trait::Binary("BitXor"),
         "shl" => Trait::Binary("Shl"),
         "shr" => Trait::Binary("Shr"),
+        "add_assign" => Trait::Assign("AddAssign"),
+        "sub_assign" => Trait::Assign("SubAssign"),
+        "mul_assign" => Trait::Assign("MulAssign"),
+        "div_assign" => Trait::Assign("DivAssign"),
+        "rem_assign" => Trait::Assign("RemAssign"),
+        "bitand_assign" => Trait::Assign("BitAndAssign"),
+        "bitor_assign" => Trait::Assign("BitOrAssign"),
+        "bitxor_assign" => Trait::Assign("BitXorAssign"),
+        "shl_assign" => Trait::Assign("ShlAssign"),
+        "shr_assign" => Trait::Assign("ShrAssign"),
         _ => panic!("name must identify an operation in core::ops"),
     }
 }
@@ -232,6 +242,62 @@ fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
+fn impl_assign(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+    let (lhs_type, rhs_type) = assign_types(&function);
+
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+    let fn_name = &function.sig.ident;
+    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+
+    let ret = &function.sig.output;
+
+    let output = quote! {
+        impl #trait_path<#rhs_type> for #lhs_type {
+            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                #function
+                #fn_name(self, rhs)
+            }
+        }
+    };
+    output.into()
+}
+
+fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+    let (lhs_type, rhs_type) = assign_types(&function);
+
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+    let fn_name = &function.sig.ident;
+    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+
+    let ret = &function.sig.output;
+    let rhs_type_val = remove_reference(rhs_type);
+
+    let ref_ = quote! {
+        impl #trait_path<#rhs_type> for #lhs_type {
+            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                #function
+                #fn_name(self, rhs)
+            }
+        }
+    };
+    let val = if let Some(rhs_type) = rhs_type_val {
+        quote! {
+            impl #trait_path<#rhs_type> for #lhs_type {
+                fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                    self.#fn_name(&rhs)
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+    let output = quote! {
+        #ref_
+        #val
+    };
+    output.into()
+}
+
 fn un_type(function: &syn::ItemFn) -> &syn::Type {
     let params = &function.sig.inputs;
     if params.len() != 1 {
@@ -251,6 +317,19 @@ fn bin_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         (lhs.ty.as_ref(), rhs.ty.as_ref())
+    } else {
+        panic!("`self` receivers can only be used in associated methods");
+    }
+}
+
+fn assign_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
+    let params = &function.sig.inputs;
+    if params.len() != 2 {
+        panic!("assignment operation takes exactly two arguments, found {}", params.len());
+    }
+    if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
+        let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of an assignment must be a mutable reference");
+        (lhs, rhs.ty.as_ref())
     } else {
         panic!("`self` receivers can only be used in associated methods");
     }
