@@ -2,37 +2,138 @@ use proc_macro::TokenStream;
 use syn;
 use quote::quote;
 
+/*
+    Traits to implement:
+
+    Unary:
+    - Neg,
+    - Not,
+
+    Binary:
+    - Add, Sub, Mul, Div, Rem,
+    - BitAnd, BitOr, BitXor,
+    - Shl, Shr,
+
+    Assignment:
+    - AddAssign, SubAssign, MulAssign, DivAssign, RemAssign,
+    - BitAndAssign, BitOrAssign, BitXorAssign,
+    - ShlAssign, ShrAssign,
+
+    Miscellaneous:
+    - Fn, FnMut, FnOnce,
+    - Deref, DerefMut,
+    - Index, IndexMut,
+    - Clone, Drop,
+*/
+
+
 #[proc_macro_attribute]
 pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
     let function = syn::parse_macro_input!(item as syn::ItemFn);
+    let trait_ = to_trait(function.sig.ident.to_string().as_str());
     let output = if attr.is_empty() {
-        match function.sig.ident.to_string().as_str() {
-            "add" => impl_binary(function, "Add"),
-            "sub" => impl_binary(function, "Sub"),
-            "mul" => impl_binary(function, "Mul"),
-            "div" => impl_binary(function, "Div"),
-            "rem" => impl_binary(function, "Rem"),
-            "bitand" => impl_binary(function, "BitAnd"),
-            "bitor" => impl_binary(function, "BitOr"),
-            "bitxor" => impl_binary(function, "BitXor"),
-            "shl" => impl_binary(function, "Shl"),
-            "shr" => impl_binary(function, "Shr"),
-            _ => panic!("name must identify an operation in core::ops"),
+        match trait_ {
+            Trait::Unary(name) => impl_unary(function, name),
+            Trait::Binary(name) => impl_binary(function, name),
+            Trait::Assign(name) => todo!(),
         }
     } else {
-        match function.sig.ident.to_string().as_str() {
-            "add" => impl_binary_autoref(function, "Add"),
-            "sub" => impl_binary_autoref(function, "Sub"),
-            "mul" => impl_binary_autoref(function, "Mul"),
-            "div" => impl_binary_autoref(function, "Div"),
-            "rem" => impl_binary_autoref(function, "Rem"),
-            "bitand" => impl_binary_autoref(function, "BitAnd"),
-            "bitor" => impl_binary_autoref(function, "BitOr"),
-            "bitxor" => impl_binary_autoref(function, "BitXor"),
-            "shl" => impl_binary_autoref(function, "Shl"),
-            "shr" => impl_binary_autoref(function, "Shr"),
-            _ => panic!("name must identify an operation in core::ops"),
+        match trait_ {
+            Trait::Unary(name) => impl_unary_autoref(function, name),
+            Trait::Binary(name) => impl_binary_autoref(function, name),
+            Trait::Assign(name) => todo!(),
         }
+    };
+    output.into()
+}
+
+enum Trait {
+    Unary(&'static str),
+    Binary(&'static str),
+    Assign(&'static str),
+}
+
+fn to_trait(function: &str) -> Trait {
+    match function {
+        "neg" => Trait::Unary("Neg"),
+        "not" => Trait::Unary("Not"),
+        "add" => Trait::Binary("Add"),
+        "sub" => Trait::Binary("Sub"),
+        "mul" => Trait::Binary("Mul"),
+        "div" => Trait::Binary("Div"),
+        "rem" => Trait::Binary("Rem"),
+        "bitand" => Trait::Binary("BitAnd"),
+        "bitor" => Trait::Binary("BitOr"),
+        "bitxor" => Trait::Binary("BitXor"),
+        "shl" => Trait::Binary("Shl"),
+        "shr" => Trait::Binary("Shr"),
+        _ => panic!("name must identify an operation in core::ops"),
+    }
+}
+
+fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+    let rhs_type = un_type(&function);
+
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+    let fn_name = &function.sig.ident;
+    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+
+    let ret = &function.sig.output;
+    let ret_type = match ret {
+        syn::ReturnType::Default => quote!(()),
+        syn::ReturnType::Type(_, typ) => quote!(#typ),
+    };
+
+    let output = quote! {
+        impl #trait_path for #rhs_type {
+            type Output = #ret_type;
+            fn #fn_name(self) #ret {
+                #function
+                #fn_name(self)
+            }
+        }
+    };
+    output.into()
+}
+
+fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+    let rhs_type = un_type(&function);
+
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+    let fn_name = &function.sig.ident;
+    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+
+    let ret = &function.sig.output;
+    let ret_type = match ret {
+        syn::ReturnType::Default => quote!(()),
+        syn::ReturnType::Type(_, typ) => quote!(#typ),
+    };
+    let rhs_type_val = remove_reference(rhs_type);
+
+    let ref_ = quote! {
+        impl #trait_path for #rhs_type {
+            type Output = #ret_type;
+            fn #fn_name(self) #ret {
+                #function
+                #fn_name(self)
+            }
+        }
+    };
+    let val = if let Some(rhs_type) = rhs_type_val {
+        quote! {
+            impl #trait_path for #rhs_type {
+                type Output = #ret_type;
+                fn #fn_name(self) #ret {
+                    (&self).#fn_name()
+                }
+            }
+        }
+    } else {
+        quote!()
+    };
+    let output = quote! {
+        #ref_
+        #val
     };
     output.into()
 }
@@ -129,6 +230,18 @@ fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
         #valval
     };
     output.into()
+}
+
+fn un_type(function: &syn::ItemFn) -> &syn::Type {
+    let params = &function.sig.inputs;
+    if params.len() != 1 {
+        panic!("unary operation takes exactly one argument, found {}", params.len());
+    }
+    if let syn::FnArg::Typed(lhs) = &params[0] {
+        lhs.ty.as_ref()
+    } else {
+        panic!("`self` receivers can only be used in associated methods");
+    }
 }
 
 fn bin_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
