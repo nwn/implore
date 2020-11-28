@@ -37,6 +37,7 @@ pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
             Trait::Binary(name) => impl_binary(function, name),
             Trait::Assign(name) => impl_assign(function, name),
             Trait::Index(name) => impl_index(function, name),
+            Trait::Deref(name) => impl_deref(function, name),
         }
     } else {
         match trait_ {
@@ -44,6 +45,7 @@ pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
             Trait::Binary(name) => impl_binary_autoref(function, name),
             Trait::Assign(name) => impl_assign_autoref(function, name),
             Trait::Index(name) => impl_index_autoref(function, name),
+            Trait::Deref(name) => panic!("implementations of `{}` cannot take any options", name),
         }
     };
     output.into()
@@ -54,6 +56,7 @@ enum Trait {
     Binary(&'static str),
     Assign(&'static str),
     Index(&'static str),
+    Deref(&'static str),
 }
 
 fn to_trait(function: &str) -> Trait {
@@ -82,12 +85,14 @@ fn to_trait(function: &str) -> Trait {
         "shr_assign" => Trait::Assign("ShrAssign"),
         "index" => Trait::Index("Index"),
         "index_mut" => Trait::Index("IndexMut"),
+        "deref" => Trait::Deref("Deref"),
+        "deref_mut" => Trait::Deref("DerefMut"),
         _ => panic!("name must identify an operation in core::ops"),
     }
 }
 
 fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let rhs_type = un_type(&function, trait_name);
+    let self_type = un_type(&function, trait_name);
 
     let fn_name = &function.sig.ident;
     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
@@ -100,7 +105,7 @@ fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     };
 
     let output = quote! {
-        impl #trait_path for #rhs_type {
+        impl #trait_path for #self_type {
             type Output = #ret_type;
             fn #fn_name(self) #ret {
                 #function
@@ -112,7 +117,7 @@ fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let rhs_type = un_type(&function, trait_name);
+    let self_type = un_type(&function, trait_name);
 
     let fn_name = &function.sig.ident;
     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
@@ -123,10 +128,10 @@ fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
         syn::ReturnType::Default => quote!(()),
         syn::ReturnType::Type(_, typ) => quote!(#typ),
     };
-    let rhs_type_val = remove_reference(rhs_type);
+    let self_type_val = remove_reference(self_type);
 
     let ref_ = quote! {
-        impl #trait_path for #rhs_type {
+        impl #trait_path for #self_type {
             type Output = #ret_type;
             fn #fn_name(self) #ret {
                 #function
@@ -134,9 +139,9 @@ fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
             }
         }
     };
-    let val = if let Some(rhs_type) = rhs_type_val {
+    let val = if let Some(self_type) = self_type_val {
         quote! {
-            impl #trait_path for #rhs_type {
+            impl #trait_path for #self_type {
                 type Output = #ret_type;
                 fn #fn_name(self) #ret {
                     (&self).#fn_name()
@@ -418,6 +423,55 @@ fn impl_index_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
+fn impl_deref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+    let self_type = deref_types(&function, trait_name);
+
+    let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+
+    let ret = &function.sig.output;
+    let ret_type;
+    let ret = match ret {
+        syn::ReturnType::Type(arrow, typ) => match typ.as_ref() {
+            syn::Type::Reference(typ) => {
+                ret_type = typ.elem.as_ref();
+                syn::ReturnType::Type(*arrow, Box::new(syn::Type::Reference(
+                    syn::TypeReference {
+                        lifetime: None, // TODO: Is this correct?
+                        .. typ.clone()
+                    }
+                )))
+            }
+            typ => panic!("deref operation must return a reference type, found {:?}", typ),
+        }
+        syn::ReturnType::Default => panic!("deref operation must return a reference type, found ()"),
+    };
+    let generics = &function.sig.generics;
+
+    let output = if trait_name == "Deref" {
+        quote! {
+            impl #generics #trait_path for #self_type {
+                type Target = #ret_type;
+                fn #fn_name(&self) #ret {
+                    #function
+                    #fn_name(self, rhs)
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl #generics #trait_path for #self_type {
+                fn #fn_name(&mut self) #ret {
+                    #function
+                    #fn_name(self, rhs)
+                }
+            }
+        }
+    };
+    output.into()
+}
+
 fn un_type<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
     let params = &function.sig.inputs;
     if params.len() != 1 {
@@ -463,6 +517,19 @@ fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Typ
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of `index` must be a reference");
         (lhs, rhs.ty.as_ref())
+    } else {
+        panic!("`self` receivers can only be used in associated methods");
+    }
+}
+
+fn deref_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
+    let params = &function.sig.inputs;
+    if params.len() != 1 {
+        panic!("operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
+    }
+    if let syn::FnArg::Typed(lhs) = &params[0] {
+        let lhs = remove_reference(lhs.ty.as_ref()).expect("the operand of `deref` must be a reference");
+        lhs
     } else {
         panic!("`self` receivers can only be used in associated methods");
     }

@@ -1,4 +1,4 @@
-use impl_ops_proc::impl_op;
+use implore::impl_op;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct X;
