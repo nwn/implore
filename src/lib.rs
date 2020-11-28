@@ -87,10 +87,10 @@ fn to_trait(function: &str) -> Trait {
 }
 
 fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let rhs_type = un_type(&function);
+    let rhs_type = un_type(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -112,10 +112,10 @@ fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let rhs_type = un_type(&function);
+    let rhs_type = un_type(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -154,10 +154,10 @@ fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_binary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = bin_types(&function);
+    let (lhs_type, rhs_type) = bin_types(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -179,7 +179,7 @@ fn impl_binary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = bin_types(&function);
+    let (lhs_type, rhs_type) = bin_types(&function, trait_name);
 
     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
@@ -248,10 +248,10 @@ fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_assign(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = assign_types(&function);
+    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -268,10 +268,10 @@ fn impl_assign(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = assign_types(&function);
+    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -304,10 +304,10 @@ fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_index(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = index_types(&function);
+    let (lhs_type, rhs_type) = index_types(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -353,10 +353,10 @@ fn impl_index(function: syn::ItemFn, trait_name: &str) -> TokenStream {
 }
 
 fn impl_index_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = index_types(&function);
+    let (lhs_type, rhs_type) = index_types(&function, trait_name);
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let fn_name = &function.sig.ident;
+    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
 
     let ret = &function.sig.output;
@@ -418,10 +418,10 @@ fn impl_index_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
-fn un_type(function: &syn::ItemFn) -> &syn::Type {
+fn un_type<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
     let params = &function.sig.inputs;
     if params.len() != 1 {
-        panic!("unary operation takes exactly one argument, found {}", params.len());
+        panic!("operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
     }
     if let syn::FnArg::Typed(lhs) = &params[0] {
         lhs.ty.as_ref()
@@ -430,10 +430,10 @@ fn un_type(function: &syn::ItemFn) -> &syn::Type {
     }
 }
 
-fn bin_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
+fn bin_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
-        panic!("binary operation takes exactly two arguments, found {}", params.len());
+        panic!("operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         (lhs.ty.as_ref(), rhs.ty.as_ref())
@@ -442,10 +442,10 @@ fn bin_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
     }
 }
 
-fn assign_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
+fn assign_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
-        panic!("assignment operation takes exactly two arguments, found {}", params.len());
+        panic!("operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of an assignment must be a mutable reference");
@@ -455,10 +455,10 @@ fn assign_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
     }
 }
 
-fn index_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
+fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
-        panic!("index operations take exactly two arguments, found {}", params.len());
+        panic!("operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of `index` must be a reference");
@@ -469,6 +469,12 @@ fn index_types(function: &syn::ItemFn) -> (&syn::Type, &syn::Type) {
 }
 
 fn remove_reference(typ: &syn::Type) -> Option<&syn::Type> {
+    // NOTE: This only works for types that look syntactically like references.
+    // This means that it fails for type aliases like `type Ref<T> = &T;`. This
+    // could potentially be fixed using `RemoveRef::WithoutRef` from
+    // https://rust-lang.github.io/rfcs/2532-associated-type-defaults.html,
+    // however that would require exporting a trait type, and thus a second
+    // crate. Perhaps one day this will make it into `std` and we can use that.
     if let syn::Type::Reference(ref_type) = typ {
         Some(ref_type.elem.as_ref())
     } else {
