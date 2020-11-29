@@ -165,7 +165,7 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
 
     let self_type = un_type(&function, trait_name);
 
-    let output = quote! {
+    let mut output = quote! {
         impl #generic_params #trait_path for #self_type #where_clause {
             type Output = #ret_type;
             fn #fn_name(self) #ret {
@@ -174,50 +174,24 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
             }
         }
     };
+    if options.auto_ref {
+        if let Some(self_type) = remove_reference(self_type) {
+            output = quote! {
+                #output
+                impl #generic_params #trait_path for #self_type #where_clause {
+                    type Output = #ret_type;
+                    fn #fn_name(self) #ret {
+                        <&#self_type as #trait_path>::#fn_name(&self)
+                    }
+                }
+            }
+        }
+    }
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
     output.into()
 }
-
-// fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-//     let self_type = un_type(&function, trait_name);
-// 
-//     let fn_name = &function.sig.ident;
-//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-// 
-//     let ret = &function.sig.output;
-//     let ret_type = match ret {
-//         syn::ReturnType::Default => quote!(()),
-//         syn::ReturnType::Type(_, typ) => quote!(#typ),
-//     };
-//     let self_type_val = remove_reference(self_type);
-// 
-//     let ref_ = quote! {
-//         impl #trait_path for #self_type {
-//             type Output = #ret_type;
-//             fn #fn_name(self) #ret {
-//                 #function
-//                 #fn_name(self)
-//             }
-//         }
-//     };
-//     let val = if let Some(self_type) = self_type_val {
-//         quote! {
-//             impl #trait_path for #self_type {
-//                 type Output = #ret_type;
-//                 fn #fn_name(self) #ret {
-//                     (&self).#fn_name()
-//                 }
-//             }
-//         }
-//     } else {
-//         quote!()
-//     };
-//     let output = quote! {
-//         #ref_
-//         #val
-//     };
-//     output.into()
-// }
 
 fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
     let Impl {
@@ -232,7 +206,7 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
 
     let (lhs_type, rhs_type) = bin_types(&function, trait_name);
 
-    let output = quote! {
+    let mut output = quote! {
         impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
             type Output = #ret_type;
             fn #fn_name(self, rhs: #rhs_type) #ret {
@@ -241,77 +215,48 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
             }
         }
     };
+    if options.auto_ref {
+        let lhs_type_val = remove_reference(lhs_type);
+        let rhs_type_val = remove_reference(rhs_type);
+
+        if let Some(lhs_type) = lhs_type_val {
+            output = quote! {
+                #output
+                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                    type Output = #ret_type;
+                    fn #fn_name(self, rhs: #rhs_type) #ret {
+                        <&#lhs_type as #trait_path<#rhs_type>>::#fn_name(&self, rhs)
+                    }
+                }
+            };
+        }
+
+        if let Some(rhs_type) = rhs_type_val {
+            output = quote! {
+                #output
+                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                    type Output = #ret_type;
+                    fn #fn_name(self, rhs: #rhs_type) #ret {
+                        <#lhs_type as #trait_path<&#rhs_type>>::#fn_name(self, &rhs)
+                    }
+                }
+            };
+        }
+
+        if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
+            output = quote! {
+                #output
+                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                    type Output = #ret_type;
+                    fn #fn_name(self, rhs: #rhs_type) #ret {
+                        <&#lhs_type as #trait_path<&#rhs_type>>::#fn_name(&self, &rhs)
+                    }
+                }
+            };
+        }
+    }
     output.into()
 }
-
-// fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-//     let fn_name = &function.sig.ident;
-//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-// 
-//     let ret = &function.sig.output;
-//     let ret_type = match ret {
-//         syn::ReturnType::Default => quote!(()),
-//         syn::ReturnType::Type(_, typ) => quote!(#typ),
-//     };
-// 
-//     let (lhs_type, rhs_type) = bin_types(&function, trait_name);
-//     let lhs_type_val = remove_reference(lhs_type);
-//     let rhs_type_val = remove_reference(rhs_type);
-// 
-//     let refref = quote! {
-//         impl #trait_path<#rhs_type> for #lhs_type {
-//             type Output = #ret_type;
-//             fn #fn_name(self, rhs: #rhs_type) #ret {
-//                 #function
-//                 #fn_name(self, rhs)
-//             }
-//         }
-//     };
-//     let valref = if let Some(lhs_type) = lhs_type_val {
-//         quote! {
-//             impl #trait_path<#rhs_type> for #lhs_type {
-//                 type Output = #ret_type;
-//                 fn #fn_name(self, rhs: #rhs_type) #ret {
-//                     (&self).#fn_name(rhs)
-//                 }
-//             }
-//         }
-//     } else {
-//         quote!()
-//     };
-//     let refval = if let Some(rhs_type) = rhs_type_val {
-//         quote! {
-//             impl #trait_path<#rhs_type> for #lhs_type {
-//                 type Output = #ret_type;
-//                 fn #fn_name(self, rhs: #rhs_type) #ret {
-//                     self.#fn_name(&rhs)
-//                 }
-//             }
-//         }
-//     } else {
-//         quote!()
-//     };
-//     let valval = if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
-//         quote! {
-//             impl #trait_path<#rhs_type> for #lhs_type {
-//                 type Output = #ret_type;
-//                 fn #fn_name(self, rhs: #rhs_type) #ret {
-//                     (&self).#fn_name(&rhs)
-//                 }
-//             }
-//         }
-//     } else {
-//         quote!()
-//     };
-//     let output = quote! {
-//         #refref
-//         #refval
-//         #valref
-//         #valval
-//     };
-//     output.into()
-// }
 
 fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
     let Impl {
@@ -326,7 +271,7 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
 
     let (lhs_type, rhs_type) = assign_types(&function, trait_name);
 
-    let output = quote! {
+    let mut output = quote! {
         impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
             fn #fn_name(&mut self, rhs: #rhs_type) #ret {
                 #function
@@ -334,44 +279,23 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
             }
         }
     };
+    if options.auto_ref {
+        if let Some(rhs_type) = remove_reference(rhs_type) {
+            output = quote! {
+                #output
+                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                    fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                        <#lhs_type as #trait_path<&#rhs_type>>::#fn_name(self, &rhs)
+                    }
+                }
+            };
+        }
+    }
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
     output.into()
 }
-
-// fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-//     let fn_name = &function.sig.ident;
-//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-// 
-//     let ret = &function.sig.output;
-// 
-//     let (lhs_type, rhs_type) = assign_types(&function, trait_name);
-//     let rhs_type_val = remove_reference(rhs_type);
-// 
-//     let ref_ = quote! {
-//         impl #trait_path<#rhs_type> for #lhs_type {
-//             fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-//                 #function
-//                 #fn_name(self, rhs)
-//             }
-//         }
-//     };
-//     let val = if let Some(rhs_type) = rhs_type_val {
-//         quote! {
-//             impl #trait_path<#rhs_type> for #lhs_type {
-//                 fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-//                     self.#fn_name(&rhs)
-//                 }
-//             }
-//         }
-//     } else {
-//         quote!()
-//     };
-//     let output = quote! {
-//         #ref_
-//         #val
-//     };
-//     output.into()
-// }
 
 fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
     let Impl {
