@@ -56,7 +56,7 @@ fn index(sent: &Sentence, cat: Category) -> &&'static str {
 }
 
 #[impl_op]
-fn index_mut<'a>(sent: &'a mut Sentence, cat: Category) -> &'a mut &'static str {
+fn index_mut(sent: &mut Sentence, cat: Category) -> &mut &'static str {
     match cat {
         Category::Subject => &mut sent.subject,
         Category::Adverb => &mut sent.adverb,
@@ -68,8 +68,17 @@ fn index_mut<'a>(sent: &'a mut Sentence, cat: Category) -> &'a mut &'static str 
 
 #[test]
 fn index() {
-    let mut sentence = Sentence::new("I", "quickly", "ate", "many", "scones");
+    let sentence = Sentence::new("I", "quickly", "ate", "many", "scones");
+    assert_eq!("I", sentence[Category::Subject]);
     assert_eq!("quickly", sentence[Category::Adverb]);
+    assert_eq!("ate", sentence[Category::Verb]);
+    assert_eq!("many", sentence[Category::Adjective]);
+    assert_eq!("scones", sentence[Category::Object]);
+}
+
+#[test]
+fn index_mut() {
+    let mut sentence = Sentence::new("I", "quickly", "ate", "many", "scones");
     sentence[Category::Subject] = "You";
     assert_eq!("You", sentence[Category::Subject]);
 }

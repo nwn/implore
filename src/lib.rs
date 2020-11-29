@@ -393,7 +393,7 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
                 type Target = #ret_type;
                 fn #fn_name(&self) #ret {
                     #function
-                    #fn_name(self, rhs)
+                    #fn_name(self)
                 }
             }
         }
@@ -402,7 +402,7 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
             impl #generic_params #trait_path for #self_type #where_clause {
                 fn #fn_name(&mut self) #ret {
                     #function
-                    #fn_name(self, rhs)
+                    #fn_name(self)
                 }
             }
         }
