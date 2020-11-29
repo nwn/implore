@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use proc_macro2::{self, TokenStream as TokenStream2};
 use syn;
 use quote::quote;
 
@@ -30,82 +31,142 @@ use quote::quote;
 #[proc_macro_attribute]
 pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
     let function = syn::parse_macro_input!(item as syn::ItemFn);
-    let trait_ = to_trait(function.sig.ident.to_string().as_str());
-    let output = if attr.is_empty() {
-        match trait_ {
-            Trait::Unary(name) => impl_unary(function, name),
-            Trait::Binary(name) => impl_binary(function, name),
-            Trait::Assign(name) => impl_assign(function, name),
-            Trait::Index(name) => impl_index(function, name),
-            Trait::Deref(name) => impl_deref(function, name),
-        }
-    } else {
-        match trait_ {
-            Trait::Unary(name) => impl_unary_autoref(function, name),
-            Trait::Binary(name) => impl_binary_autoref(function, name),
-            Trait::Assign(name) => impl_assign_autoref(function, name),
-            Trait::Index(name) => impl_index_autoref(function, name),
-            Trait::Deref(name) => panic!("implementations of `{}` cannot take any options", name),
-        }
+    let (imp, trait_group) = parse_fn(&function);
+    let options = parse_options(attr);
+    let output = match trait_group {
+        TraitGroup::Unary => impl_unary(imp, &function, options),
+        TraitGroup::Binary => impl_binary(imp, &function, options),
+        TraitGroup::Assign => impl_assign(imp, &function, options),
+        TraitGroup::Index => impl_index(imp, &function, options),
+        TraitGroup::Deref => impl_deref(imp, &function, options),
     };
     output.into()
 }
 
-enum Trait {
-    Unary(&'static str),
-    Binary(&'static str),
-    Assign(&'static str),
-    Index(&'static str),
-    Deref(&'static str),
+enum TraitGroup {
+    Unary,
+    Binary,
+    Assign,
+    Index,
+    Deref,
 }
 
-fn to_trait(function: &str) -> Trait {
+fn to_trait(function: &str) -> (&'static str, TraitGroup) {
+    use TraitGroup::*;
     match function {
-        "neg" => Trait::Unary("Neg"),
-        "not" => Trait::Unary("Not"),
-        "add" => Trait::Binary("Add"),
-        "sub" => Trait::Binary("Sub"),
-        "mul" => Trait::Binary("Mul"),
-        "div" => Trait::Binary("Div"),
-        "rem" => Trait::Binary("Rem"),
-        "bitand" => Trait::Binary("BitAnd"),
-        "bitor" => Trait::Binary("BitOr"),
-        "bitxor" => Trait::Binary("BitXor"),
-        "shl" => Trait::Binary("Shl"),
-        "shr" => Trait::Binary("Shr"),
-        "add_assign" => Trait::Assign("AddAssign"),
-        "sub_assign" => Trait::Assign("SubAssign"),
-        "mul_assign" => Trait::Assign("MulAssign"),
-        "div_assign" => Trait::Assign("DivAssign"),
-        "rem_assign" => Trait::Assign("RemAssign"),
-        "bitand_assign" => Trait::Assign("BitAndAssign"),
-        "bitor_assign" => Trait::Assign("BitOrAssign"),
-        "bitxor_assign" => Trait::Assign("BitXorAssign"),
-        "shl_assign" => Trait::Assign("ShlAssign"),
-        "shr_assign" => Trait::Assign("ShrAssign"),
-        "index" => Trait::Index("Index"),
-        "index_mut" => Trait::Index("IndexMut"),
-        "deref" => Trait::Deref("Deref"),
-        "deref_mut" => Trait::Deref("DerefMut"),
+        "neg" => ("Neg", Unary),
+        "not" => ("Not", Unary),
+        "add" => ("Add", Binary),
+        "sub" => ("Sub", Binary),
+        "mul" => ("Mul", Binary),
+        "div" => ("Div", Binary),
+        "rem" => ("Rem", Binary),
+        "bitand" => ("BitAnd", Binary),
+        "bitor" => ("BitOr", Binary),
+        "bitxor" => ("BitXor", Binary),
+        "shl" => ("Shl", Binary),
+        "shr" => ("Shr", Binary),
+        "add_assign" => ("AddAssign", Assign),
+        "sub_assign" => ("SubAssign", Assign),
+        "mul_assign" => ("MulAssign", Assign),
+        "div_assign" => ("DivAssign", Assign),
+        "rem_assign" => ("RemAssign", Assign),
+        "bitand_assign" => ("BitAndAssign", Assign),
+        "bitor_assign" => ("BitOrAssign", Assign),
+        "bitxor_assign" => ("BitXorAssign", Assign),
+        "shl_assign" => ("ShlAssign", Assign),
+        "shr_assign" => ("ShrAssign", Assign),
+        "index" => ("Index", Index),
+        "index_mut" => ("IndexMut", Index),
+        "deref" => ("Deref", Deref),
+        "deref_mut" => ("DerefMut", Deref),
         _ => panic!("name must identify an operation in core::ops"),
     }
 }
 
-fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let self_type = un_type(&function, trait_name);
+struct Impl<'f> {
+    fn_name: &'f proc_macro2::Ident,
+    trait_name: &'static str,
+    trait_path: TokenStream2,
+    ret: &'f syn::ReturnType,
+    ret_type: TokenStream2,
+    generic_params: syn::Generics,
+    where_clause: Option<syn::WhereClause>,
+}
 
+fn parse_fn(function: &syn::ItemFn) -> (Impl, TraitGroup) {
     let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
+    let (trait_name, trait_group) = to_trait(fn_name.to_string().as_ref());
+    let trait_path = {
+        let ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+        quote::quote_spanned!(fn_name.span()=> ::core::ops::#ident)
+    };
     let ret = &function.sig.output;
     let ret_type = match ret {
         syn::ReturnType::Default => quote!(()),
         syn::ReturnType::Type(_, typ) => quote!(#typ),
     };
+    let (generic_params, where_clause) = {
+        let mut generics = function.sig.generics.clone();
+        let where_clause = generics.where_clause.take();
+        (generics, where_clause)
+    };
+ 
+    (Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type,
+        generic_params,
+        where_clause,
+    }, trait_group)
+}
+
+struct Options {
+    auto_ref: bool,
+    commutative: bool,
+}
+impl Options {
+    fn none() -> Self {
+        Self {
+            auto_ref: false,
+            commutative: false,
+        }
+    }
+}
+
+fn parse_options(attr: TokenStream) -> Options {
+    use syn::{Ident, parse::Parser, punctuated::Punctuated, Token};
+    let parser = Punctuated::<Ident, Token![,]>::parse_terminated;
+    let opts = parser.parse(attr).unwrap();
+    let mut options = Options::none();
+    for opt in opts {
+        let str = opt.to_string();
+        match str.as_ref() {
+            "autoref" => options.auto_ref = true,
+            "commutative" => options.commutative = true,
+            _ => panic!("invalid option: {}", str),
+        }
+    }
+    options
+}
+
+fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type,
+        generic_params,
+        where_clause,
+    } = imp;
+
+    let self_type = un_type(&function, trait_name);
 
     let output = quote! {
-        impl #trait_path for #self_type {
+        impl #generic_params #trait_path for #self_type #where_clause {
             type Output = #ret_type;
             fn #fn_name(self) #ret {
                 #function
@@ -116,63 +177,63 @@ fn impl_unary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
-fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let self_type = un_type(&function, trait_name);
+// fn impl_unary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+//     let self_type = un_type(&function, trait_name);
+// 
+//     let fn_name = &function.sig.ident;
+//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+// 
+//     let ret = &function.sig.output;
+//     let ret_type = match ret {
+//         syn::ReturnType::Default => quote!(()),
+//         syn::ReturnType::Type(_, typ) => quote!(#typ),
+//     };
+//     let self_type_val = remove_reference(self_type);
+// 
+//     let ref_ = quote! {
+//         impl #trait_path for #self_type {
+//             type Output = #ret_type;
+//             fn #fn_name(self) #ret {
+//                 #function
+//                 #fn_name(self)
+//             }
+//         }
+//     };
+//     let val = if let Some(self_type) = self_type_val {
+//         quote! {
+//             impl #trait_path for #self_type {
+//                 type Output = #ret_type;
+//                 fn #fn_name(self) #ret {
+//                     (&self).#fn_name()
+//                 }
+//             }
+//         }
+//     } else {
+//         quote!()
+//     };
+//     let output = quote! {
+//         #ref_
+//         #val
+//     };
+//     output.into()
+// }
 
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type,
+        generic_params,
+        where_clause,
+    } = imp;
 
-    let ret = &function.sig.output;
-    let ret_type = match ret {
-        syn::ReturnType::Default => quote!(()),
-        syn::ReturnType::Type(_, typ) => quote!(#typ),
-    };
-    let self_type_val = remove_reference(self_type);
-
-    let ref_ = quote! {
-        impl #trait_path for #self_type {
-            type Output = #ret_type;
-            fn #fn_name(self) #ret {
-                #function
-                #fn_name(self)
-            }
-        }
-    };
-    let val = if let Some(self_type) = self_type_val {
-        quote! {
-            impl #trait_path for #self_type {
-                type Output = #ret_type;
-                fn #fn_name(self) #ret {
-                    (&self).#fn_name()
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let output = quote! {
-        #ref_
-        #val
-    };
-    output.into()
-}
-
-fn impl_binary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     let (lhs_type, rhs_type) = bin_types(&function, trait_name);
 
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
-    let ret_type = match ret {
-        syn::ReturnType::Default => quote!(()),
-        syn::ReturnType::Type(_, typ) => quote!(#typ),
-    };
-
     let output = quote! {
-        impl #trait_path<#rhs_type> for #lhs_type {
+        impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
             type Output = #ret_type;
             fn #fn_name(self, rhs: #rhs_type) #ret {
                 #function
@@ -183,160 +244,161 @@ fn impl_binary(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
-fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = bin_types(&function, trait_name);
+// fn impl_binary_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+//     let fn_name = &function.sig.ident;
+//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+// 
+//     let ret = &function.sig.output;
+//     let ret_type = match ret {
+//         syn::ReturnType::Default => quote!(()),
+//         syn::ReturnType::Type(_, typ) => quote!(#typ),
+//     };
+// 
+//     let (lhs_type, rhs_type) = bin_types(&function, trait_name);
+//     let lhs_type_val = remove_reference(lhs_type);
+//     let rhs_type_val = remove_reference(rhs_type);
+// 
+//     let refref = quote! {
+//         impl #trait_path<#rhs_type> for #lhs_type {
+//             type Output = #ret_type;
+//             fn #fn_name(self, rhs: #rhs_type) #ret {
+//                 #function
+//                 #fn_name(self, rhs)
+//             }
+//         }
+//     };
+//     let valref = if let Some(lhs_type) = lhs_type_val {
+//         quote! {
+//             impl #trait_path<#rhs_type> for #lhs_type {
+//                 type Output = #ret_type;
+//                 fn #fn_name(self, rhs: #rhs_type) #ret {
+//                     (&self).#fn_name(rhs)
+//                 }
+//             }
+//         }
+//     } else {
+//         quote!()
+//     };
+//     let refval = if let Some(rhs_type) = rhs_type_val {
+//         quote! {
+//             impl #trait_path<#rhs_type> for #lhs_type {
+//                 type Output = #ret_type;
+//                 fn #fn_name(self, rhs: #rhs_type) #ret {
+//                     self.#fn_name(&rhs)
+//                 }
+//             }
+//         }
+//     } else {
+//         quote!()
+//     };
+//     let valval = if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
+//         quote! {
+//             impl #trait_path<#rhs_type> for #lhs_type {
+//                 type Output = #ret_type;
+//                 fn #fn_name(self, rhs: #rhs_type) #ret {
+//                     (&self).#fn_name(&rhs)
+//                 }
+//             }
+//         }
+//     } else {
+//         quote!()
+//     };
+//     let output = quote! {
+//         #refref
+//         #refval
+//         #valref
+//         #valval
+//     };
+//     output.into()
+// }
 
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let fn_name = &function.sig.ident;
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
 
-    let ret = &function.sig.output;
+    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
+
+    let output = quote! {
+        impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                #function
+                #fn_name(self, rhs)
+            }
+        }
+    };
+    output.into()
+}
+
+// fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
+//     let fn_name = &function.sig.ident;
+//     let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
+//     let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
+// 
+//     let ret = &function.sig.output;
+// 
+//     let (lhs_type, rhs_type) = assign_types(&function, trait_name);
+//     let rhs_type_val = remove_reference(rhs_type);
+// 
+//     let ref_ = quote! {
+//         impl #trait_path<#rhs_type> for #lhs_type {
+//             fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+//                 #function
+//                 #fn_name(self, rhs)
+//             }
+//         }
+//     };
+//     let val = if let Some(rhs_type) = rhs_type_val {
+//         quote! {
+//             impl #trait_path<#rhs_type> for #lhs_type {
+//                 fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+//                     self.#fn_name(&rhs)
+//                 }
+//             }
+//         }
+//     } else {
+//         quote!()
+//     };
+//     let output = quote! {
+//         #ref_
+//         #val
+//     };
+//     output.into()
+// }
+
+fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
+
     let ret_type = match ret {
-        syn::ReturnType::Default => quote!(()),
-        syn::ReturnType::Type(_, typ) => quote!(#typ),
-    };
-    let lhs_type_val = remove_reference(lhs_type);
-    let rhs_type_val = remove_reference(rhs_type);
-
-    let refref = quote! {
-        impl #trait_path<#rhs_type> for #lhs_type {
-            type Output = #ret_type;
-            fn #fn_name(self, rhs: #rhs_type) #ret {
-                #function
-                #fn_name(self, rhs)
-            }
-        }
-    };
-    let valref = if let Some(lhs_type) = lhs_type_val {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                type Output = #ret_type;
-                fn #fn_name(self, rhs: #rhs_type) #ret {
-                    (&self).#fn_name(rhs)
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let refval = if let Some(rhs_type) = rhs_type_val {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                type Output = #ret_type;
-                fn #fn_name(self, rhs: #rhs_type) #ret {
-                    self.#fn_name(&rhs)
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let valval = if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                type Output = #ret_type;
-                fn #fn_name(self, rhs: #rhs_type) #ret {
-                    (&self).#fn_name(&rhs)
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let output = quote! {
-        #refref
-        #refval
-        #valref
-        #valval
-    };
-    output.into()
-}
-
-fn impl_assign(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
-
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
-
-    let output = quote! {
-        impl #trait_path<#rhs_type> for #lhs_type {
-            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-                #function
-                #fn_name(self, rhs)
-            }
-        }
-    };
-    output.into()
-}
-
-fn impl_assign_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
-
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
-    let rhs_type_val = remove_reference(rhs_type);
-
-    let ref_ = quote! {
-        impl #trait_path<#rhs_type> for #lhs_type {
-            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-                #function
-                #fn_name(self, rhs)
-            }
-        }
-    };
-    let val = if let Some(rhs_type) = rhs_type_val {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-                    self.#fn_name(&rhs)
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let output = quote! {
-        #ref_
-        #val
-    };
-    output.into()
-}
-
-fn impl_index(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = index_types(&function, trait_name);
-
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
-    let ret_type;
-    let ret = match ret {
-        syn::ReturnType::Type(arrow, typ) => match typ.as_ref() {
+        syn::ReturnType::Type(_, typ) => match typ.as_ref() {
             syn::Type::Reference(typ) => {
-                ret_type = typ.elem.as_ref();
-                syn::ReturnType::Type(*arrow, Box::new(syn::Type::Reference(
-                    syn::TypeReference {
-                        lifetime: None,
-                        .. typ.clone()
-                    }
-                )))
+                typ.elem.as_ref()
             }
             typ => panic!("index operation must return a reference type, found {:?}", typ),
         }
         syn::ReturnType::Default => panic!("index operation must return a reference type, found ()"),
     };
-    let generics = &function.sig.generics;
+
+    let (lhs_type, rhs_type) = index_types(&function, trait_name);
 
     let output = if trait_name == "Index" {
         quote! {
-            impl #generics #trait_path<#rhs_type> for #lhs_type {
+            impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
                 type Output = #ret_type;
                 fn #fn_name(&self, rhs: #rhs_type) #ret {
                     #function
@@ -346,7 +408,7 @@ fn impl_index(function: syn::ItemFn, trait_name: &str) -> TokenStream {
         }
     } else {
         quote! {
-            impl #generics #trait_path<#rhs_type> for #lhs_type {
+            impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
                 fn #fn_name(&mut self, rhs: #rhs_type) #ret {
                     #function
                     #fn_name(self, rhs)
@@ -357,101 +419,32 @@ fn impl_index(function: syn::ItemFn, trait_name: &str) -> TokenStream {
     output.into()
 }
 
-fn impl_index_autoref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let (lhs_type, rhs_type) = index_types(&function, trait_name);
+fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
 
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
     let ret_type = match ret {
         syn::ReturnType::Type(_, typ) => match typ.as_ref() {
-            syn::Type::Reference(typ) => typ,
-            typ => panic!("index operation must return a reference type, found {:?}", typ),
-        }
-        syn::ReturnType::Default => panic!("index operation must return a reference type, found ()"),
-    };
-    let rhs_type_val = remove_reference(rhs_type);
-
-    let ref_ = if trait_name == "Index" {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                type Output = #ret_type;
-                fn #fn_name(&self, rhs: #rhs_type) #ret {
-                    #function
-                    #fn_name(self, rhs)
-                }
-            }
-        }
-    } else {
-        quote! {
-            impl #trait_path<#rhs_type> for #lhs_type {
-                fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-                    #function
-                    #fn_name(self, rhs)
-                }
-            }
-        }
-    };
-    let val = if let Some(rhs_type) = rhs_type_val {
-        if trait_name == "Index" {
-            quote! {
-                impl #trait_path<#rhs_type> for #lhs_type {
-                    type Output = #ret_type;
-                    fn #fn_name(&self, rhs: #rhs_type) #ret {
-                        self.#fn_name(&rhs)
-                    }
-                }
-            }
-        } else {
-            quote! {
-                impl #trait_path<#rhs_type> for #lhs_type {
-                    fn #fn_name(&mut self, rhs: #rhs_type) #ret {
-                        self.#fn_name(&rhs)
-                    }
-                }
-            }
-        }
-    } else {
-        quote!()
-    };
-    let output = quote! {
-        #ref_
-        #val
-    };
-    output.into()
-}
-
-fn impl_deref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
-    let self_type = deref_types(&function, trait_name);
-
-    let fn_name = &function.sig.ident;
-    let trait_ident = syn::Ident::new(trait_name, proc_macro2::Span::call_site());
-    let trait_path = quote::quote_spanned!(fn_name.span()=> ::core::ops::#trait_ident);
-
-    let ret = &function.sig.output;
-    let ret_type;
-    let ret = match ret {
-        syn::ReturnType::Type(arrow, typ) => match typ.as_ref() {
             syn::Type::Reference(typ) => {
-                ret_type = typ.elem.as_ref();
-                syn::ReturnType::Type(*arrow, Box::new(syn::Type::Reference(
-                    syn::TypeReference {
-                        lifetime: None, // TODO: Is this correct?
-                        .. typ.clone()
-                    }
-                )))
+                typ.elem.as_ref()
             }
             typ => panic!("deref operation must return a reference type, found {:?}", typ),
         }
         syn::ReturnType::Default => panic!("deref operation must return a reference type, found ()"),
     };
-    let generics = &function.sig.generics;
+
+    let self_type = deref_types(&function, trait_name);
 
     let output = if trait_name == "Deref" {
         quote! {
-            impl #generics #trait_path for #self_type {
+            impl #generic_params #trait_path for #self_type #where_clause {
                 type Target = #ret_type;
                 fn #fn_name(&self) #ret {
                     #function
@@ -461,7 +454,7 @@ fn impl_deref(function: syn::ItemFn, trait_name: &str) -> TokenStream {
         }
     } else {
         quote! {
-            impl #generics #trait_path for #self_type {
+            impl #generic_params #trait_path for #self_type #where_clause {
                 fn #fn_name(&mut self) #ret {
                     #function
                     #fn_name(self, rhs)
