@@ -204,55 +204,76 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
         where_clause,
     } = imp;
 
-    let (lhs_type, rhs_type) = bin_types(&function, trait_name);
+    let (mut lhs_type, mut rhs_type) = bin_types(&function, trait_name);
 
-    let mut output = quote! {
-        impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-            type Output = #ret_type;
-            fn #fn_name(self, rhs: #rhs_type) #ret {
+    let mut commuting = false;
+    let mut output = quote!();
+    loop {
+        let body = if !commuting {
+            quote! {
                 #function
                 #fn_name(self, rhs)
             }
-        }
-    };
-    if options.auto_ref {
-        let lhs_type_val = remove_reference(lhs_type);
-        let rhs_type_val = remove_reference(rhs_type);
-
-        if let Some(lhs_type) = lhs_type_val {
-            output = quote! {
-                #output
-                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                    type Output = #ret_type;
-                    fn #fn_name(self, rhs: #rhs_type) #ret {
-                        <&#lhs_type as #trait_path<#rhs_type>>::#fn_name(&self, rhs)
-                    }
+        } else {
+            quote! {
+                <#rhs_type as #trait_path<#lhs_type>>::#fn_name(rhs, self)
+            }
+        };
+        output = quote! {
+            #output
+            impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                type Output = #ret_type;
+                fn #fn_name(self, rhs: #rhs_type) #ret {
+                    #body
                 }
-            };
+            }
+        };
+        if options.auto_ref {
+            let lhs_type_val = remove_reference(lhs_type);
+            let rhs_type_val = remove_reference(rhs_type);
+
+            if let Some(lhs_type) = lhs_type_val {
+                output = quote! {
+                    #output
+                    impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                        type Output = #ret_type;
+                        fn #fn_name(self, rhs: #rhs_type) #ret {
+                            <&#lhs_type as #trait_path<#rhs_type>>::#fn_name(&self, rhs)
+                        }
+                    }
+                };
+            }
+
+            if let Some(rhs_type) = rhs_type_val {
+                output = quote! {
+                    #output
+                    impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                        type Output = #ret_type;
+                        fn #fn_name(self, rhs: #rhs_type) #ret {
+                            <#lhs_type as #trait_path<&#rhs_type>>::#fn_name(self, &rhs)
+                        }
+                    }
+                };
+            }
+
+            if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
+                output = quote! {
+                    #output
+                    impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+                        type Output = #ret_type;
+                        fn #fn_name(self, rhs: #rhs_type) #ret {
+                            <&#lhs_type as #trait_path<&#rhs_type>>::#fn_name(&self, &rhs)
+                        }
+                    }
+                };
+            }
         }
 
-        if let Some(rhs_type) = rhs_type_val {
-            output = quote! {
-                #output
-                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                    type Output = #ret_type;
-                    fn #fn_name(self, rhs: #rhs_type) #ret {
-                        <#lhs_type as #trait_path<&#rhs_type>>::#fn_name(self, &rhs)
-                    }
-                }
-            };
-        }
-
-        if let (Some(lhs_type), Some(rhs_type)) = (lhs_type_val, rhs_type_val) {
-            output = quote! {
-                #output
-                impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                    type Output = #ret_type;
-                    fn #fn_name(self, rhs: #rhs_type) #ret {
-                        <&#lhs_type as #trait_path<&#rhs_type>>::#fn_name(&self, &rhs)
-                    }
-                }
-            };
+        if options.commutative != commuting {
+            core::mem::swap(&mut lhs_type, &mut rhs_type);
+            commuting = true;
+        } else {
+            break;
         }
     }
     output.into()
