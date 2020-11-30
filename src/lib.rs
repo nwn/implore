@@ -111,7 +111,7 @@ fn parse_fn(function: &syn::ItemFn) -> (Impl, TraitGroup) {
         let where_clause = generics.where_clause.take();
         (generics, where_clause)
     };
- 
+
     (Impl {
         fn_name,
         trait_name,
@@ -290,11 +290,12 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
         where_clause,
     } = imp;
 
-    let (lhs_type, rhs_type) = assign_types(&function, trait_name);
+    let (lhs_type, rhs_type, self_lifetime) = assign_types(&function, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let mut output = quote! {
         impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-            fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+            fn #fn_name <#self_lifetime> (& #self_lifetime mut self, rhs: #rhs_type) #ret {
                 #function
                 #fn_name(self, rhs)
             }
@@ -305,7 +306,7 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
             output = quote! {
                 #output
                 impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                    fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                    fn #fn_name <#self_lifetime> (& #self_lifetime mut self, rhs: #rhs_type) #ret {
                         <#lhs_type as #trait_path<&#rhs_type>>::#fn_name(self, &rhs)
                     }
                 }
@@ -339,13 +340,14 @@ fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         syn::ReturnType::Default => panic!("index operation must return a reference type, found ()"),
     };
 
-    let (lhs_type, rhs_type) = index_types(&function, trait_name);
+    let (lhs_type, rhs_type, self_lifetime) = index_types(&function, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let output = if trait_name == "Index" {
         quote! {
             impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
                 type Output = #ret_type;
-                fn #fn_name(&self, rhs: #rhs_type) #ret {
+                fn #fn_name <#self_lifetime> (& #self_lifetime self, rhs: #rhs_type) #ret {
                     #function
                     #fn_name(self, rhs)
                 }
@@ -354,7 +356,7 @@ fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
     } else {
         quote! {
             impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                fn #fn_name(&mut self, rhs: #rhs_type) #ret {
+                fn #fn_name <#self_lifetime> (& #self_lifetime mut self, rhs: #rhs_type) #ret {
                     #function
                     #fn_name(self, rhs)
                 }
@@ -385,13 +387,14 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         syn::ReturnType::Default => panic!("deref operation must return a reference type, found ()"),
     };
 
-    let self_type = deref_types(&function, trait_name);
+    let (self_type, self_lifetime) = deref_types(&function, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let output = if trait_name == "Deref" {
         quote! {
             impl #generic_params #trait_path for #self_type #where_clause {
                 type Target = #ret_type;
-                fn #fn_name(&self) #ret {
+                fn #fn_name <#self_lifetime> (& #self_lifetime self) #ret {
                     #function
                     #fn_name(self)
                 }
@@ -400,7 +403,7 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
     } else {
         quote! {
             impl #generic_params #trait_path for #self_type #where_clause {
-                fn #fn_name(&mut self) #ret {
+                fn #fn_name <#self_lifetime> (& #self_lifetime mut self) #ret {
                     #function
                     #fn_name(self)
                 }
@@ -434,46 +437,50 @@ fn bin_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type,
     }
 }
 
-fn assign_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
+fn assign_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
         panic!("operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
-        let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of an assignment must be a mutable reference");
-        (lhs, rhs.ty.as_ref())
+        let lhs_ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the first operand of an assignment must be a mutable reference");
+        (lhs_ref_type.elem.as_ref(), rhs.ty.as_ref(), lhs_ref_type.lifetime.as_ref())
     } else {
         panic!("`self` receivers can only be used in associated methods");
     }
 }
 
-fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
+fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
         panic!("operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
-        let lhs = remove_reference(lhs.ty.as_ref()).expect("the first operand of `index` must be a reference");
-        (lhs, rhs.ty.as_ref())
+        let lhs_ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the first operand of `index` must be a reference");
+        (lhs_ref_type.elem.as_ref(), rhs.ty.as_ref(), lhs_ref_type.lifetime.as_ref())
     } else {
         panic!("`self` receivers can only be used in associated methods");
     }
 }
 
-fn deref_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
+fn deref_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, Option<&'f syn::Lifetime>) {
     let params = &function.sig.inputs;
     if params.len() != 1 {
         panic!("operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
     }
     if let syn::FnArg::Typed(lhs) = &params[0] {
-        let lhs = remove_reference(lhs.ty.as_ref()).expect("the operand of `deref` must be a reference");
-        lhs
+        let ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the operand of `deref` must be a reference");
+        (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
     } else {
         panic!("`self` receivers can only be used in associated methods");
     }
 }
 
 fn remove_reference(typ: &syn::Type) -> Option<&syn::Type> {
+    unwrap_reference(typ).map(|ref_type| ref_type.elem.as_ref())
+}
+
+fn unwrap_reference(typ: &syn::Type) -> Option<&syn::TypeReference> {
     // NOTE: This only works for types that look syntactically like references.
     // This means that it fails for type aliases like `type Ref<T> = &T;`. This
     // could potentially be fixed using `RemoveRef::WithoutRef` from
@@ -481,8 +488,32 @@ fn remove_reference(typ: &syn::Type) -> Option<&syn::Type> {
     // however that would require exporting a trait type, and thus a second
     // crate. Perhaps one day this will make it into `std` and we can use that.
     if let syn::Type::Reference(ref_type) = typ {
-        Some(ref_type.elem.as_ref())
+        Some(ref_type)
     } else {
         None
     }
+}
+
+/// Remove the given lifetime from the list of generic parameters.
+///
+/// This should only by necessary to move the lifetime on a `&self` or
+/// `&mut self` receiver from the `impl`'s generic parameters to the function's
+/// generic parameters. More generally, we would need to find any occurrences
+/// of the lifetime in any types or `where` clauses, but fortunately none of
+/// the supported traits permit parameterizing the function beyond a `self`
+/// lifetime.
+fn remove_generic_param(mut generic_params: syn::Generics, remove: Option<&syn::Lifetime>) -> syn::Generics {
+    if let Some(remove) = remove {
+        generic_params.params = generic_params.params
+            .into_pairs()
+            .filter(|pair|
+                if let syn::GenericParam::Lifetime(lifetime) = pair.value() {
+                    &lifetime.lifetime != remove
+                } else {
+                    true
+                }
+            )
+            .collect();
+    }
+    generic_params
 }
