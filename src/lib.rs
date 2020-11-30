@@ -163,6 +163,10 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         where_clause,
     } = imp;
 
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
+
     let self_type = un_type(&function, trait_name);
 
     let mut output = quote! {
@@ -186,9 +190,6 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
                 }
             }
         }
-    }
-    if options.commutative {
-        panic!("operation `{}` cannot be made commutative", trait_name);
     }
     output.into()
 }
@@ -290,6 +291,10 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
         where_clause,
     } = imp;
 
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
+
     let (lhs_type, rhs_type, self_lifetime) = assign_types(&function, trait_name);
     let generic_params = remove_generic_param(generic_params, self_lifetime);
 
@@ -313,9 +318,6 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
             };
         }
     }
-    if options.commutative {
-        panic!("operation `{}` cannot be made commutative", trait_name);
-    }
     output.into()
 }
 
@@ -329,6 +331,13 @@ fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         generic_params,
         where_clause,
     } = imp;
+
+    if options.auto_ref {
+        panic!("operation `{}` does not support autoref", trait_name);
+    }
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
 
     let ret_type = match ret {
         syn::ReturnType::Type(_, typ) => match typ.as_ref() {
@@ -376,6 +385,13 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         generic_params,
         where_clause,
     } = imp;
+
+    if options.auto_ref {
+        panic!("operation `{}` does not support autoref", trait_name);
+    }
+    if options.commutative {
+        panic!("operation `{}` cannot be made commutative", trait_name);
+    }
 
     let ret_type = match ret {
         syn::ReturnType::Type(_, typ) => match typ.as_ref() {
