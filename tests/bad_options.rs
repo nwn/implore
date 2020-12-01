@@ -23,6 +23,11 @@ fn sub(lhs: X, rhs: X) -> X {
     lhs
 }
 
+#[impl_op(not-an-identifier)]
+fn mul(lhs: X, rhs: X) -> X {
+    lhs
+}
+
 #[impl_op(autoref)]
 fn deref(lhs: &X) -> &X {
     lhs

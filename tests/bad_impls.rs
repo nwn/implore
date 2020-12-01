@@ -17,3 +17,16 @@ fn deref(lhs: &X) -> HashMap<&'static str, Vec<u32>> {
 fn deref(lhs: &X) {
     lhs
 }
+
+#[impl_op]
+fn add_assign(x: &X, y: u32) {}
+
+#[impl_op]
+fn index(x: X, y: u32) -> &X {
+    &X
+}
+
+#[impl_op]
+fn deref_mut(x: X) -> &X {
+    &X
+}

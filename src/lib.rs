@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::{self, TokenStream as TokenStream2};
-use proc_macro_error::{abort, emit_error, proc_macro_error};
+use proc_macro_error::{abort, Diagnostic, emit_error, proc_macro_error};
 use syn;
 use quote::quote;
 
@@ -152,7 +152,9 @@ fn try_add_option(opt: &mut Option<syn::Ident>, new: syn::Ident) {
 fn parse_options(attr: TokenStream) -> Options {
     use syn::{Ident, parse::Parser, punctuated::Punctuated, Token};
     let parser = Punctuated::<Ident, Token![,]>::parse_terminated;
-    let opts = parser.parse(attr).unwrap();
+    let opts = parser.parse(attr).unwrap_or_else(|error|
+        Diagnostic::from(error).abort()
+    );
     let mut options = Options::none();
     for opt in opts {
         let str = opt.to_string();
@@ -458,19 +460,25 @@ fn bin_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &
 
 fn assign_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
     let (lhs, rhs) = expect_two_params(sig, trait_name);
-    let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of an assignment must be a mutable reference");
+    let lhs_ref_type = unwrap_reference(lhs).unwrap_or_else(||
+        abort!(lhs, "the first operand of `{}` must be a mutable reference", sig.ident.to_string())
+    );
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
 fn index_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
     let (lhs, rhs) = expect_two_params(sig, trait_name);
-    let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of `index` must be a reference");
+    let lhs_ref_type = unwrap_reference(lhs).unwrap_or_else(||
+        abort!(lhs, "the first operand of `{}` must be a reference", sig.ident.to_string())
+    );
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
 fn deref_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, Option<&'s syn::Lifetime>) {
     let typ = expect_one_param(sig, trait_name);
-    let ref_type = unwrap_reference(typ).expect("the operand of `deref` must be a reference");
+    let ref_type = unwrap_reference(typ).unwrap_or_else(||
+        abort!(typ, "`{}` must take a reference", sig.ident.to_string())
+    );
     (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
 }
 
