@@ -1,0 +1,5 @@
+error: operation `Deref` does not support autoref
+ --> $DIR/autoref_on_deref.rs:6:11
+  |
+6 | #[impl_op(autoref)]
+  |           ^^^^^^^

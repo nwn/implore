@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::{self, TokenStream as TokenStream2};
-use proc_macro_error::{abort, Diagnostic, emit_error, proc_macro_error};
+use proc_macro_error::{abort, Diagnostic, emit_error, emit_warning, proc_macro_error};
 use syn;
 use quote::quote;
 
@@ -193,7 +193,7 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
             }
         }
     };
-    if options.auto_ref.is_some() {
+    if let Some(auto_ref) = &options.auto_ref {
         if let Some(self_type) = remove_reference(self_type) {
             output = quote! {
                 #output
@@ -204,6 +204,8 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
                     }
                 }
             }
+        } else {
+            emit_warning!(auto_ref, "option `autoref` has no effect");
         }
     }
     output.into()
@@ -244,7 +246,7 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
                 }
             }
         };
-        if options.auto_ref.is_some() {
+        if let Some(auto_ref) = &options.auto_ref {
             let lhs_type_val = remove_reference(lhs_type);
             let rhs_type_val = remove_reference(rhs_type);
 
@@ -282,6 +284,10 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
                         }
                     }
                 };
+            }
+
+            if lhs_type_val.is_none() && rhs_type_val.is_none() {
+                emit_warning!(auto_ref, "option `autoref` has no effect");
             }
         }
 
@@ -460,7 +466,7 @@ fn bin_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &
 
 fn assign_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
     let (lhs, rhs) = expect_two_params(sig, trait_name);
-    let lhs_ref_type = unwrap_reference(lhs).unwrap_or_else(||
+    let lhs_ref_type = unwrap_reference(lhs).filter(|typ| typ.mutability.is_some()).unwrap_or_else(||
         abort!(lhs, "the first operand of `{}` must be a mutable reference", sig.ident.to_string())
     );
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())

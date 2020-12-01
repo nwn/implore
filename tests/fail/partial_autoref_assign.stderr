@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_assign.rs:12:25
+   |
+12 |     assert_eq!((), x -= &X);
+   |                         ^^
+   |                         |
+   |                         expected struct `X`, found `&X`
+   |                         help: consider removing the borrow: `X`

@@ -19,7 +19,7 @@ fn split_not() {
     assert_eq!(X, !&X);
 }
 
-#[impl_op(autoref)]
+#[impl_op]
 fn neg(rhs: X) -> X {
     rhs
 }

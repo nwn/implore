@@ -1,0 +1,5 @@
+error: operation `Index` cannot commute
+ --> $DIR/commutative_on_index.rs:6:11
+  |
+6 | #[impl_op(commutative)]
+  |           ^^^^^^^^^^^

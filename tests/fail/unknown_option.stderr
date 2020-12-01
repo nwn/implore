@@ -1,0 +1,5 @@
+error: invalid option: `auto`
+ --> $DIR/unknown_option.rs:6:11
+  |
+6 | #[impl_op(auto)]
+  |           ^^^^

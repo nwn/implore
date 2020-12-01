@@ -1,0 +1,7 @@
+error: `deref` must return a reference type
+ --> $DIR/no_return_on_deref.rs:7:1
+  |
+7 | fn deref(lhs: &X) {
+  | ^^^^^^^^^^^^^^^^^
+  |
+  = note: found `()`

@@ -1,0 +1,5 @@
+error: `deref` must return a reference type
+ --> $DIR/non_ref_return_on_deref.rs:7:22
+  |
+7 | fn deref(lhs: &X) -> HashMap<&'static str, Vec<u32>> {
+  |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

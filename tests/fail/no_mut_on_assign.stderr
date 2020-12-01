@@ -1,0 +1,5 @@
+error: the first operand of `add_assign` must be a mutable reference
+ --> $DIR/no_mut_on_assign.rs:7:18
+  |
+7 | fn add_assign(x: &X, y: u32) {}
+  |                  ^^

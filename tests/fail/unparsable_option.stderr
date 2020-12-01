@@ -1,0 +1,5 @@
+error: expected `,`
+ --> $DIR/unparsable_option.rs:6:14
+  |
+6 | #[impl_op(not-an-identifier)]
+  |              ^

@@ -1,0 +1,13 @@
+warning: option `autoref` has no effect
+ --> $DIR/partial_autoref_unary.rs:6:11
+  |
+6 | #[impl_op(autoref)]
+  |           ^^^^^^^
+
+error[E0600]: cannot apply unary operator `-` to type `&X`
+  --> $DIR/partial_autoref_unary.rs:13:19
+   |
+13 |     assert_eq!(X, -&X);
+   |                   ^^^ cannot apply unary operator `-`
+   |
+   = note: an implementation of `std::ops::Neg` might be missing for `&X`

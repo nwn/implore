@@ -1,0 +1,87 @@
+error[E0369]: cannot subtract `Y` from `&X`
+  --> $DIR/partial_autoref_commutative.rs:17:22
+   |
+17 |     assert_eq!(X, &X - Y);
+   |                   -- ^ - Y
+   |                   |
+   |                   &X
+   |
+help: `-` can be used on `X`, you can dereference `&X`
+   |
+17 |     assert_eq!(X, *&X - Y);
+   |                   ^
+
+error[E0369]: cannot subtract `&Y` from `&X`
+  --> $DIR/partial_autoref_commutative.rs:18:22
+   |
+18 |     assert_eq!(X, &X - &Y);
+   |                   -- ^ -- &Y
+   |                   |
+   |                   &X
+   |
+help: `-` can be used on `X`, you can dereference `&X`
+   |
+18 |     assert_eq!(X, *&X - &Y);
+   |                   ^
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_commutative.rs:21:23
+   |
+21 |     assert_eq!(X, Y - &X);
+   |                       ^^
+   |                       |
+   |                       expected struct `X`, found `&X`
+   |                       help: consider removing the borrow: `X`
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_commutative.rs:22:24
+   |
+22 |     assert_eq!(X, &Y - &X);
+   |                        ^^
+   |                        |
+   |                        expected struct `X`, found `&X`
+   |                        help: consider removing the borrow: `X`
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_commutative.rs:32:23
+   |
+32 |     assert_eq!(X, X * &Y);
+   |                       ^^
+   |                       |
+   |                       expected struct `Y`, found `&Y`
+   |                       help: consider removing the borrow: `Y`
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_commutative.rs:34:24
+   |
+34 |     assert_eq!(X, &X * &Y);
+   |                        ^^
+   |                        |
+   |                        expected struct `Y`, found `&Y`
+   |                        help: consider removing the borrow: `Y`
+
+error[E0369]: cannot multiply `&Y` by `X`
+  --> $DIR/partial_autoref_commutative.rs:36:22
+   |
+36 |     assert_eq!(X, &Y * X);
+   |                   -- ^ - X
+   |                   |
+   |                   &Y
+   |
+help: `*` can be used on `Y`, you can dereference `&Y`
+   |
+36 |     assert_eq!(X, *&Y * X);
+   |                   ^
+
+error[E0369]: cannot multiply `&Y` by `&X`
+  --> $DIR/partial_autoref_commutative.rs:38:22
+   |
+38 |     assert_eq!(X, &Y * &X);
+   |                   -- ^ -- &X
+   |                   |
+   |                   &Y
+   |
+help: `*` can be used on `Y`, you can dereference `&Y`
+   |
+38 |     assert_eq!(X, *&Y * &X);
+   |                   ^

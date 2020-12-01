@@ -1,0 +1,11 @@
+error: repeated option: `autoref`
+ --> $DIR/repeat_option_1.rs:6:20
+  |
+6 | #[impl_op(autoref, autoref)]
+  |                    ^^^^^^^
+  |
+note: previously occurs here
+ --> $DIR/repeat_option_1.rs:6:11
+  |
+6 | #[impl_op(autoref, autoref)]
+  |           ^^^^^^^

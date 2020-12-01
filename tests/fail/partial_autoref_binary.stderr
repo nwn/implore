@@ -1,0 +1,43 @@
+error[E0369]: cannot subtract `X` from `&X`
+  --> $DIR/partial_autoref_binary.rs:14:22
+   |
+14 |     assert_eq!(X, &X - X);
+   |                   -- ^ - X
+   |                   |
+   |                   &X
+   |
+help: `-` can be used on `X`, you can dereference `&X`
+   |
+14 |     assert_eq!(X, *&X - X);
+   |                   ^
+
+error[E0369]: cannot subtract `&X` from `&X`
+  --> $DIR/partial_autoref_binary.rs:15:22
+   |
+15 |     assert_eq!(X, &X - &X);
+   |                   -- ^ -- &X
+   |                   |
+   |                   &X
+   |
+help: `-` can be used on `X`, you can dereference `&X`
+   |
+15 |     assert_eq!(X, *&X - &X);
+   |                   ^
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_binary.rs:25:23
+   |
+25 |     assert_eq!(X, X * &X);
+   |                       ^^
+   |                       |
+   |                       expected struct `X`, found `&X`
+   |                       help: consider removing the borrow: `X`
+
+error[E0308]: mismatched types
+  --> $DIR/partial_autoref_binary.rs:27:24
+   |
+27 |     assert_eq!(X, &X * &X);
+   |                        ^^
+   |                        |
+   |                        expected struct `X`, found `&X`
+   |                        help: consider removing the borrow: `X`

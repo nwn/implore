@@ -1,0 +1,5 @@
+error: unknown operation: `pow`
+ --> $DIR/unknown_trait.rs:7:4
+  |
+7 | fn pow(lhs: X, exponent: u32) -> X {
+  |    ^^^

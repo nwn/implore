@@ -1,0 +1,5 @@
+error: the first operand of `index` must be a reference
+ --> $DIR/no_ref_on_index.rs:7:13
+  |
+7 | fn index(x: X, y: u32) -> &X {
+  |             ^

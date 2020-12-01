@@ -1,0 +1,5 @@
+warning: option `autoref` has no effect
+ --> $DIR/no_ref_autoref.rs:6:11
+  |
+6 | #[impl_op(autoref)]
+  |           ^^^^^^^
