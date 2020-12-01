@@ -442,67 +442,54 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
     output.into()
 }
 
-fn un_type<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
+fn expect_one_param<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
     let params = &function.sig.inputs;
     if params.len() != 1 {
-        emit_error!(function.sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
+        abort!(function.sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
     }
     if let syn::FnArg::Typed(lhs) = &params[0] {
         lhs.ty.as_ref()
     } else {
-        panic!("`self` receivers can only be used in associated methods");
+        abort!(&params, "`self` receivers can only be used in associated methods");
     }
 }
 
-fn bin_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
+fn expect_two_params<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
     let params = &function.sig.inputs;
     if params.len() != 2 {
-        emit_error!(function.sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
+        abort!(function.sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         (lhs.ty.as_ref(), rhs.ty.as_ref())
     } else {
-        panic!("`self` receivers can only be used in associated methods");
+        abort!(&params, "`self` receivers can only be used in associated methods");
     }
+}
+
+fn un_type<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
+    expect_one_param(function, trait_name)
+}
+
+fn bin_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
+    expect_two_params(function, trait_name)
 }
 
 fn assign_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
-    let params = &function.sig.inputs;
-    if params.len() != 2 {
-        emit_error!(function.sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
-    }
-    if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
-        let lhs_ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the first operand of an assignment must be a mutable reference");
-        (lhs_ref_type.elem.as_ref(), rhs.ty.as_ref(), lhs_ref_type.lifetime.as_ref())
-    } else {
-        panic!("`self` receivers can only be used in associated methods");
-    }
+    let (lhs, rhs) = expect_two_params(function, trait_name);
+    let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of an assignment must be a mutable reference");
+    (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
 fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
-    let params = &function.sig.inputs;
-    if params.len() != 2 {
-        emit_error!(function.sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
-    }
-    if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
-        let lhs_ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the first operand of `index` must be a reference");
-        (lhs_ref_type.elem.as_ref(), rhs.ty.as_ref(), lhs_ref_type.lifetime.as_ref())
-    } else {
-        panic!("`self` receivers can only be used in associated methods");
-    }
+    let (lhs, rhs) = expect_two_params(function, trait_name);
+    let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of `index` must be a reference");
+    (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
 fn deref_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, Option<&'f syn::Lifetime>) {
-    let params = &function.sig.inputs;
-    if params.len() != 1 {
-        emit_error!(function.sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
-    }
-    if let syn::FnArg::Typed(lhs) = &params[0] {
-        let ref_type = unwrap_reference(lhs.ty.as_ref()).expect("the operand of `deref` must be a reference");
-        (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
-    } else {
-        panic!("`self` receivers can only be used in associated methods");
-    }
+    let typ = expect_one_param(function, trait_name);
+    let ref_type = unwrap_reference(typ).expect("the operand of `deref` must be a reference");
+    (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
 }
 
 fn remove_reference(typ: &syn::Type) -> Option<&syn::Type> {
