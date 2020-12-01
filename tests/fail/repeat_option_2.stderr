@@ -1,11 +1,8 @@
 error: repeated option: `autoref`
+
+  = note: previously occurs here
+
  --> $DIR/repeat_option_2.rs:6:33
   |
 6 | #[impl_op(autoref, commutative, autoref)]
   |                                 ^^^^^^^
-  |
-note: previously occurs here
- --> $DIR/repeat_option_2.rs:6:11
-  |
-6 | #[impl_op(autoref, commutative, autoref)]
-  |           ^^^^^^^
