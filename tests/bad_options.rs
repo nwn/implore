@@ -32,8 +32,3 @@ fn deref(lhs: &X) -> &X {
 fn index(lhs: &X, idx: usize) -> &X {
     lhs
 }
-
-#[impl_op]
-fn pow(lhs: X, exponent: u32) -> X {
-    lhs
-}

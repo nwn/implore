@@ -180,7 +180,7 @@ fn impl_unary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         emit_error!(token, "operation `{}` cannot commute", trait_name);
     }
 
-    let self_type = un_type(&function, trait_name);
+    let self_type = un_type(&function.sig, trait_name);
 
     let mut output = quote! {
         impl #generic_params #trait_path for #self_type #where_clause {
@@ -218,7 +218,7 @@ fn impl_binary(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
         where_clause,
     } = imp;
 
-    let (mut lhs_type, mut rhs_type) = bin_types(&function, trait_name);
+    let (mut lhs_type, mut rhs_type) = bin_types(&function.sig, trait_name);
 
     let mut commuting = false;
     let mut output = quote!();
@@ -308,7 +308,7 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
         emit_error!(token, "operation `{}` cannot commute", trait_name);
     }
 
-    let (lhs_type, rhs_type, self_lifetime) = assign_types(&function, trait_name);
+    let (lhs_type, rhs_type, self_lifetime) = assign_types(&function.sig, trait_name);
     let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let mut output = quote! {
@@ -352,17 +352,8 @@ fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         emit_error!(token, "operation `{}` cannot commute", trait_name);
     }
 
-    let ret_type = match ret {
-        syn::ReturnType::Type(_, typ) => match typ.as_ref() {
-            syn::Type::Reference(typ) => {
-                typ.elem.as_ref()
-            }
-            typ => panic!("index operation must return a reference type, found {:?}", typ),
-        }
-        syn::ReturnType::Default => panic!("index operation must return a reference type, found ()"),
-    };
-
-    let (lhs_type, rhs_type, self_lifetime) = index_types(&function, trait_name);
+    let (lhs_type, rhs_type, self_lifetime) = index_types(&function.sig, trait_name);
+    let ret_type = unwrap_reference_return(&function.sig);
     let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let output = if trait_name == "Index" {
@@ -406,17 +397,8 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
         emit_error!(token, "operation `{}` cannot commute", trait_name);
     }
 
-    let ret_type = match ret {
-        syn::ReturnType::Type(_, typ) => match typ.as_ref() {
-            syn::Type::Reference(typ) => {
-                typ.elem.as_ref()
-            }
-            typ => panic!("deref operation must return a reference type, found {:?}", typ),
-        }
-        syn::ReturnType::Default => panic!("deref operation must return a reference type, found ()"),
-    };
-
-    let (self_type, self_lifetime) = deref_types(&function, trait_name);
+    let (self_type, self_lifetime) = deref_types(&function.sig, trait_name);
+    let ret_type = unwrap_reference_return(&function.sig);
     let generic_params = remove_generic_param(generic_params, self_lifetime);
 
     let output = if trait_name == "Deref" {
@@ -442,10 +424,10 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
     output.into()
 }
 
-fn expect_one_param<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
-    let params = &function.sig.inputs;
+fn expect_one_param<'s>(sig: &'s syn::Signature, trait_name: &str) -> &'s syn::Type {
+    let params = &sig.inputs;
     if params.len() != 1 {
-        abort!(function.sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
+        abort!(sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
     }
     if let syn::FnArg::Typed(lhs) = &params[0] {
         lhs.ty.as_ref()
@@ -454,10 +436,10 @@ fn expect_one_param<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn:
     }
 }
 
-fn expect_two_params<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
-    let params = &function.sig.inputs;
+fn expect_two_params<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type) {
+    let params = &sig.inputs;
     if params.len() != 2 {
-        abort!(function.sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
+        abort!(sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         (lhs.ty.as_ref(), rhs.ty.as_ref())
@@ -466,28 +448,28 @@ fn expect_two_params<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f sy
     }
 }
 
-fn un_type<'f>(function: &'f syn::ItemFn, trait_name: &str) -> &'f syn::Type {
-    expect_one_param(function, trait_name)
+fn un_type<'s>(sig: &'s syn::Signature, trait_name: &str) -> &'s syn::Type {
+    expect_one_param(sig, trait_name)
 }
 
-fn bin_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type) {
-    expect_two_params(function, trait_name)
+fn bin_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type) {
+    expect_two_params(sig, trait_name)
 }
 
-fn assign_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
-    let (lhs, rhs) = expect_two_params(function, trait_name);
+fn assign_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
+    let (lhs, rhs) = expect_two_params(sig, trait_name);
     let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of an assignment must be a mutable reference");
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
-fn index_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, &'f syn::Type, Option<&'f syn::Lifetime>) {
-    let (lhs, rhs) = expect_two_params(function, trait_name);
+fn index_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
+    let (lhs, rhs) = expect_two_params(sig, trait_name);
     let lhs_ref_type = unwrap_reference(lhs).expect("the first operand of `index` must be a reference");
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
-fn deref_types<'f>(function: &'f syn::ItemFn, trait_name: &str) -> (&'f syn::Type, Option<&'f syn::Lifetime>) {
-    let typ = expect_one_param(function, trait_name);
+fn deref_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, Option<&'s syn::Lifetime>) {
+    let typ = expect_one_param(sig, trait_name);
     let ref_type = unwrap_reference(typ).expect("the operand of `deref` must be a reference");
     (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
 }
@@ -507,6 +489,22 @@ fn unwrap_reference(typ: &syn::Type) -> Option<&syn::TypeReference> {
         Some(ref_type)
     } else {
         None
+    }
+}
+
+fn unwrap_reference_return(sig: &syn::Signature) -> &syn::Type {
+    match &sig.output {
+        syn::ReturnType::Type(_, typ) => {
+            if let Some(typ) = unwrap_reference(typ.as_ref()) {
+                typ.elem.as_ref()
+            } else {
+                abort!(typ, "`{}` must return a reference type", sig.ident.to_string());
+            }
+        }
+        syn::ReturnType::Default => {
+            abort!(sig, "`{}` must return a reference type", sig.ident.to_string();
+                note = "found `()`");
+        }
     }
 }
 
