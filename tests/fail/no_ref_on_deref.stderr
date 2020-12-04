@@ -1,5 +1,11 @@
-error: `deref_mut` must take a reference
- --> $DIR/no_ref_on_deref.rs:7:17
+error: `deref` must take a reference
+ --> $DIR/no_ref_on_deref.rs:7:13
   |
-7 | fn deref_mut(x: X) -> &X {
-  |                 ^
+7 | fn deref(x: X) -> &X {
+  |             ^
+
+error: `deref_mut` must take a mutable reference
+  --> $DIR/no_ref_on_deref.rs:12:17
+   |
+12 | fn deref_mut(x: X) -> &X {
+   |                 ^

@@ -1,0 +1,29 @@
+error: operation `Neg` takes exactly 1 argument, found 2
+ --> $DIR/wrong_num_params.rs:7:7
+  |
+7 | fn neg(x: &mut X, y: u32) {}
+  |       ^^^^^^^^^^^^^^^^^^^
+
+error: operation `Mul` takes exactly 2 arguments, found 1
+  --> $DIR/wrong_num_params.rs:10:7
+   |
+10 | fn mul(x: &X) {}
+   |       ^^^^^^^
+
+error: operation `AddAssign` takes exactly 2 arguments, found 3
+  --> $DIR/wrong_num_params.rs:13:14
+   |
+13 | fn add_assign(x: &mut X, y: u32, z: bool) {}
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: operation `IndexMut` takes exactly 2 arguments, found 3
+  --> $DIR/wrong_num_params.rs:16:13
+   |
+16 | fn index_mut(x: &mut X, y: u32, z: bool) -> &mut X {}
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: operation `Deref` takes exactly 1 argument, found 0
+  --> $DIR/wrong_num_params.rs:19:9
+   |
+19 | fn deref() {}
+   |         ^^

@@ -1,0 +1,23 @@
+error: `index` must return a reference type
+ --> $DIR/mut_on_index.rs:7:28
+  |
+7 | fn index(x: &X, y: u32) -> X {
+  |                            ^
+
+error: the first operand of `index` must be a reference
+  --> $DIR/mut_on_index.rs:12:13
+   |
+12 | fn index(x: X, y: u32) -> &X {
+   |             ^
+
+error: the first operand of `index` must be an immutable reference
+  --> $DIR/mut_on_index.rs:17:13
+   |
+17 | fn index(x: &mut X, y: u32) -> &X {
+   |             ^^^^^^
+
+error: `index` must return an immutable reference type
+  --> $DIR/mut_on_index.rs:22:28
+   |
+22 | fn index(x: &X, y: u32) -> &mut X {
+   |                            ^^^^^^

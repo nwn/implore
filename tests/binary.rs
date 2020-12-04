@@ -19,7 +19,7 @@ fn add(_lhs: X, rhs: &X) -> X {
 }
 
 #[impl_op]
-fn add(lhs: &X, _rhs: X) -> X {
+fn add(lhs: &mut X, _rhs: X) -> X {
     *lhs
 }
 
@@ -27,7 +27,7 @@ fn add(lhs: &X, _rhs: X) -> X {
 fn split_addition() {
     assert_eq!(X, X + X);
     assert_eq!(X, X + &X);
-    assert_eq!(X, &X + X);
+    assert_eq!(X, &mut X + X);
     assert_eq!(X, &X + &X);
 }
 

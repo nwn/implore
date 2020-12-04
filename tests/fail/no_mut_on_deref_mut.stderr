@@ -1,0 +1,23 @@
+error: `deref_mut` must return a mutable reference type
+ --> $DIR/no_mut_on_deref_mut.rs:7:28
+  |
+7 | fn deref_mut(x: &mut X) -> X {
+  |                            ^
+
+error: `deref_mut` must take a mutable reference
+  --> $DIR/no_mut_on_deref_mut.rs:12:17
+   |
+12 | fn deref_mut(x: X) -> &mut X {
+   |                 ^
+
+error: `deref_mut` must return a mutable reference type
+  --> $DIR/no_mut_on_deref_mut.rs:17:28
+   |
+17 | fn deref_mut(x: &mut X) -> &X {
+   |                            ^^
+
+error: `deref_mut` must take a mutable reference
+  --> $DIR/no_mut_on_deref_mut.rs:22:17
+   |
+22 | fn deref_mut(x: &X) -> &mut X {
+   |                 ^^

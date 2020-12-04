@@ -41,8 +41,10 @@ pub fn impl_op(attr: TokenStream, item: TokenStream) -> TokenStream {
         TraitGroup::Unary => impl_unary(imp, &function, options),
         TraitGroup::Binary => impl_binary(imp, &function, options),
         TraitGroup::Assign => impl_assign(imp, &function, options),
-        TraitGroup::Index => impl_index(imp, &function, options),
         TraitGroup::Deref => impl_deref(imp, &function, options),
+        TraitGroup::DerefMut => impl_deref_mut(imp, &function, options),
+        TraitGroup::Index => impl_index(imp, &function, options),
+        TraitGroup::IndexMut => impl_index_mut(imp, &function, options),
     };
     output.into()
 }
@@ -51,8 +53,10 @@ enum TraitGroup {
     Unary,
     Binary,
     Assign,
-    Index,
     Deref,
+    DerefMut,
+    Index,
+    IndexMut,
 }
 
 fn to_trait(fn_name: &syn::Ident) -> (&'static str, TraitGroup) {
@@ -80,10 +84,10 @@ fn to_trait(fn_name: &syn::Ident) -> (&'static str, TraitGroup) {
         "bitxor_assign" => ("BitXorAssign", Assign),
         "shl_assign" => ("ShlAssign", Assign),
         "shr_assign" => ("ShrAssign", Assign),
-        "index" => ("Index", Index),
-        "index_mut" => ("IndexMut", Index),
         "deref" => ("Deref", Deref),
-        "deref_mut" => ("DerefMut", Deref),
+        "deref_mut" => ("DerefMut", DerefMut),
+        "index" => ("Index", Index),
+        "index_mut" => ("IndexMut", IndexMut),
         name => abort!(fn_name, "unknown operation: `{}`", name),
     }
 }
@@ -342,51 +346,6 @@ fn impl_assign(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStre
     output.into()
 }
 
-fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
-    let Impl {
-        fn_name,
-        trait_name,
-        trait_path,
-        ret,
-        ret_type: _,
-        generic_params,
-        where_clause,
-    } = imp;
-
-    if let Some(token) = options.auto_ref {
-        emit_error!(token, "operation `{}` does not support autoref", trait_name);
-    }
-    if let Some(token) = options.commutative {
-        emit_error!(token, "operation `{}` cannot commute", trait_name);
-    }
-
-    let (lhs_type, rhs_type, self_lifetime) = index_types(&function.sig, trait_name);
-    let ret_type = unwrap_reference_return(&function.sig);
-    let generic_params = remove_generic_param(generic_params, self_lifetime);
-
-    let output = if trait_name == "Index" {
-        quote! {
-            impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                type Output = #ret_type;
-                fn #fn_name <#self_lifetime> (& #self_lifetime self, rhs: #rhs_type) #ret {
-                    #function
-                    #fn_name(self, rhs)
-                }
-            }
-        }
-    } else {
-        quote! {
-            impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
-                fn #fn_name <#self_lifetime> (& #self_lifetime mut self, rhs: #rhs_type) #ret {
-                    #function
-                    #fn_name(self, rhs)
-                }
-            }
-        }
-    };
-    output.into()
-}
-
 fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
     let Impl {
         fn_name,
@@ -406,26 +365,115 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
     }
 
     let (self_type, self_lifetime) = deref_types(&function.sig, trait_name);
-    let ret_type = unwrap_reference_return(&function.sig);
     let generic_params = remove_generic_param(generic_params, self_lifetime);
+    let ret_type = unwrap_reference_return(&function.sig);
 
-    let output = if trait_name == "Deref" {
-        quote! {
-            impl #generic_params #trait_path for #self_type #where_clause {
-                type Target = #ret_type;
-                fn #fn_name <#self_lifetime> (& #self_lifetime self) #ret {
-                    #function
-                    #fn_name(self)
-                }
+    let output = quote! {
+        impl #generic_params #trait_path for #self_type #where_clause {
+            type Target = #ret_type;
+            fn #fn_name <#self_lifetime> (& #self_lifetime self) #ret {
+                #function
+                #fn_name(self)
             }
         }
-    } else {
-        quote! {
-            impl #generic_params #trait_path for #self_type #where_clause {
-                fn #fn_name <#self_lifetime> (& #self_lifetime mut self) #ret {
-                    #function
-                    #fn_name(self)
-                }
+    };
+    output.into()
+}
+
+fn impl_deref_mut(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
+
+    if let Some(token) = options.auto_ref {
+        emit_error!(token, "operation `{}` does not support autoref", trait_name);
+    }
+    if let Some(token) = options.commutative {
+        emit_error!(token, "operation `{}` cannot commute", trait_name);
+    }
+
+    let (self_type, self_lifetime) = deref_mut_types(&function.sig, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
+    let _ret_type = unwrap_mutable_reference_return(&function.sig);
+
+    let output = quote! {
+        impl #generic_params #trait_path for #self_type #where_clause {
+            fn #fn_name <#self_lifetime> (& #self_lifetime mut self) #ret {
+                #function
+                #fn_name(self)
+            }
+        }
+    };
+    output.into()
+}
+
+fn impl_index(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
+
+    if let Some(token) = options.auto_ref {
+        emit_error!(token, "operation `{}` does not support autoref", trait_name);
+    }
+    if let Some(token) = options.commutative {
+        emit_error!(token, "operation `{}` cannot commute", trait_name);
+    }
+
+    let (lhs_type, rhs_type, self_lifetime) = index_types(&function.sig, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
+    let ret_type = unwrap_reference_return(&function.sig);
+
+    let output = quote! {
+        impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+            type Output = #ret_type;
+            fn #fn_name <#self_lifetime> (& #self_lifetime self, rhs: #rhs_type) #ret {
+                #function
+                #fn_name(self, rhs)
+            }
+        }
+    };
+    output.into()
+}
+
+fn impl_index_mut(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStream {
+    let Impl {
+        fn_name,
+        trait_name,
+        trait_path,
+        ret,
+        ret_type: _,
+        generic_params,
+        where_clause,
+    } = imp;
+
+    if let Some(token) = options.auto_ref {
+        emit_error!(token, "operation `{}` does not support autoref", trait_name);
+    }
+    if let Some(token) = options.commutative {
+        emit_error!(token, "operation `{}` cannot commute", trait_name);
+    }
+
+    let (lhs_type, rhs_type, self_lifetime) = index_mut_types(&function.sig, trait_name);
+    let generic_params = remove_generic_param(generic_params, self_lifetime);
+    let _ret_type = unwrap_mutable_reference_return(&function.sig);
+
+    let output = quote! {
+        impl #generic_params #trait_path<#rhs_type> for #lhs_type #where_clause {
+            fn #fn_name <#self_lifetime> (& #self_lifetime mut self, rhs: #rhs_type) #ret {
+                #function
+                #fn_name(self, rhs)
             }
         }
     };
@@ -435,7 +483,8 @@ fn impl_deref(imp: Impl, function: &syn::ItemFn, options: Options) -> TokenStrea
 fn expect_one_param<'s>(sig: &'s syn::Signature, trait_name: &str) -> &'s syn::Type {
     let params = &sig.inputs;
     if params.len() != 1 {
-        abort!(sig, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
+        let span = sig.paren_token.span;
+        abort!(span, "operation `{}` takes exactly 1 argument, found {}", trait_name, params.len());
     }
     if let syn::FnArg::Typed(lhs) = &params[0] {
         lhs.ty.as_ref()
@@ -447,7 +496,8 @@ fn expect_one_param<'s>(sig: &'s syn::Signature, trait_name: &str) -> &'s syn::T
 fn expect_two_params<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type) {
     let params = &sig.inputs;
     if params.len() != 2 {
-        abort!(sig, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
+        let span = sig.paren_token.span;
+        abort!(span, "operation `{}` takes exactly 2 arguments, found {}", trait_name, params.len());
     }
     if let (syn::FnArg::Typed(lhs), syn::FnArg::Typed(rhs)) = (&params[0], &params[1]) {
         (lhs.ty.as_ref(), rhs.ty.as_ref())
@@ -472,20 +522,42 @@ fn assign_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type
     (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
-fn index_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
-    let (lhs, rhs) = expect_two_params(sig, trait_name);
-    let lhs_ref_type = unwrap_reference(lhs).unwrap_or_else(||
-        abort!(lhs, "the first operand of `{}` must be a reference", sig.ident.to_string())
-    );
-    (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
-}
-
 fn deref_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, Option<&'s syn::Lifetime>) {
     let typ = expect_one_param(sig, trait_name);
     let ref_type = unwrap_reference(typ).unwrap_or_else(||
         abort!(typ, "`{}` must take a reference", sig.ident.to_string())
     );
+    if ref_type.mutability.is_some() {
+        abort!(typ, "`{}` must take an immutable reference", sig.ident.to_string())
+    }
     (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
+}
+
+fn deref_mut_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, Option<&'s syn::Lifetime>) {
+    let typ = expect_one_param(sig, trait_name);
+    let ref_type = unwrap_reference(typ).filter(|typ| typ.mutability.is_some()).unwrap_or_else(||
+        abort!(typ, "`{}` must take a mutable reference", sig.ident.to_string())
+    );
+    (ref_type.elem.as_ref(), ref_type.lifetime.as_ref())
+}
+
+fn index_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
+    let (lhs, rhs) = expect_two_params(sig, trait_name);
+    let lhs_ref_type = unwrap_reference(lhs).unwrap_or_else(||
+        abort!(lhs, "the first operand of `{}` must be a reference", sig.ident.to_string())
+    );
+    if lhs_ref_type.mutability.is_some() {
+        abort!(lhs, "the first operand of `{}` must be an immutable reference", sig.ident.to_string())
+    }
+    (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
+}
+
+fn index_mut_types<'s>(sig: &'s syn::Signature, trait_name: &str) -> (&'s syn::Type, &'s syn::Type, Option<&'s syn::Lifetime>) {
+    let (lhs, rhs) = expect_two_params(sig, trait_name);
+    let lhs_ref_type = unwrap_reference(lhs).filter(|typ| typ.mutability.is_some()).unwrap_or_else(||
+        abort!(lhs, "the first operand of `{}` must be a mutable reference", sig.ident.to_string())
+    );
+    (lhs_ref_type.elem.as_ref(), rhs, lhs_ref_type.lifetime.as_ref())
 }
 
 fn remove_reference(typ: &syn::Type) -> Option<&syn::Type> {
@@ -510,13 +582,37 @@ fn unwrap_reference_return(sig: &syn::Signature) -> &syn::Type {
     match &sig.output {
         syn::ReturnType::Type(_, typ) => {
             if let Some(typ) = unwrap_reference(typ.as_ref()) {
-                typ.elem.as_ref()
+                if typ.mutability.is_none() {
+                    typ.elem.as_ref()
+                } else {
+                    abort!(typ, "`{}` must return an immutable reference type", sig.ident.to_string());
+                }
             } else {
                 abort!(typ, "`{}` must return a reference type", sig.ident.to_string());
             }
         }
         syn::ReturnType::Default => {
             abort!(sig, "`{}` must return a reference type", sig.ident.to_string();
+                note = "found `()`");
+        }
+    }
+}
+
+fn unwrap_mutable_reference_return(sig: &syn::Signature) -> &syn::Type {
+    match &sig.output {
+        syn::ReturnType::Type(_, typ) => {
+            if let Some(typ) = unwrap_reference(typ.as_ref()) {
+                if typ.mutability.is_some() {
+                    typ.elem.as_ref()
+                } else {
+                    abort!(typ, "`{}` must return a mutable reference type", sig.ident.to_string());
+                }
+            } else {
+                abort!(typ, "`{}` must return a mutable reference type", sig.ident.to_string());
+            }
+        }
+        syn::ReturnType::Default => {
+            abort!(sig, "`{}` must return a mutable reference type", sig.ident.to_string();
                 note = "found `()`");
         }
     }

@@ -1,0 +1,23 @@
+error: `index_mut` must return a mutable reference type
+ --> $DIR/no_mut_on_index_mut.rs:7:36
+  |
+7 | fn index_mut(x: &mut X, y: u32) -> X {
+  |                                    ^
+
+error: the first operand of `index_mut` must be a mutable reference
+  --> $DIR/no_mut_on_index_mut.rs:12:17
+   |
+12 | fn index_mut(x: X, y: u32) -> &mut X {
+   |                 ^
+
+error: `index_mut` must return a mutable reference type
+  --> $DIR/no_mut_on_index_mut.rs:17:36
+   |
+17 | fn index_mut(x: &mut X, y: u32) -> &X {
+   |                                    ^^
+
+error: the first operand of `index_mut` must be a mutable reference
+  --> $DIR/no_mut_on_index_mut.rs:22:17
+   |
+22 | fn index_mut(x: &X, y: u32) -> &mut X {
+   |                 ^^

@@ -1,0 +1,23 @@
+error: `deref` must return a reference type
+ --> $DIR/mut_on_deref.rs:7:20
+  |
+7 | fn deref(x: &X) -> X {
+  |                    ^
+
+error: `deref` must take a reference
+  --> $DIR/mut_on_deref.rs:12:13
+   |
+12 | fn deref(x: X) -> &X {
+   |             ^
+
+error: `deref` must take an immutable reference
+  --> $DIR/mut_on_deref.rs:17:13
+   |
+17 | fn deref(x: &mut X) -> &X {
+   |             ^^^^^^
+
+error: `deref` must return an immutable reference type
+  --> $DIR/mut_on_deref.rs:22:20
+   |
+22 | fn deref(x: &X) -> &mut X {
+   |                    ^^^^^^

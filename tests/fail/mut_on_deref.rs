@@ -4,13 +4,23 @@ use implore::impl_op;
 struct X;
 
 #[impl_op]
+fn deref(x: &X) -> X {
+    X
+}
+
+#[impl_op]
 fn deref(x: X) -> &X {
+    &mut X
+}
+
+#[impl_op]
+fn deref(x: &mut X) -> &X {
     &X
 }
 
 #[impl_op]
-fn deref_mut(x: X) -> &X {
-    &X
+fn deref(x: &X) -> &mut X {
+    &mut X
 }
 
 fn main() {}
